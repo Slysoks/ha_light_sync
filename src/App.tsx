@@ -16,6 +16,10 @@ function MonitorDashboard() {
   const sortedMonitors = [...monitors].sort(
     (a, b) => a.position.x - b.position.x,
   );
+  const selectedMonitor = sortedMonitors[selectedScreen];
+  const selectedScreenshot = selectedMonitor
+    ? screenshots[monitorKey(selectedMonitor)]
+    : undefined;
 
   return (
     <>
@@ -34,19 +38,13 @@ function MonitorDashboard() {
         </div>
       </aside>
       <main className="container">
-        <img
-          src={
-            screenshots[
-              monitorKey(sortedMonitors[selectedScreen] ?? monitors[0])
-            ]
-          }
-          alt={`Screenshot of ${
-            sortedMonitors[selectedScreen]?.name ??
-            monitors[0]?.name ??
-            "monitor"
-          }`}
-          className="background-image"
-        />
+        {selectedScreenshot && (
+          <img
+            src={selectedScreenshot}
+            alt={`Screenshot of ${selectedMonitor.name ?? "monitor"}`}
+            className="background-image"
+          />
+        )}
         {error && <p role="alert">Unable to load monitors: {error}</p>}
         {!error && monitors.length === 0 && <p>No monitors found.</p>}
       </main>
