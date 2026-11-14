@@ -1,5 +1,6 @@
 import "./App.css";
 import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { availableMonitors, type Monitor } from "@tauri-apps/api/window";
 
 function App() {
@@ -10,32 +11,55 @@ function App() {
   useEffect(() => {
     let active = true;
 
-    availableMonitors()
-      .then((available) => {
+    const refreshMonitors = () => {
+      availableMonitors()
+        .then((available) => {
+          if (active) {
+            setMonitors(available);
+            setSelectedScreen(0);
+            setError(null);
+          }
+        })
+        .catch((reason: unknown) => {
+          if (active) {
+            setError(reason instanceof Error ? reason.message : String(reason));
+          }
+        });
+    };
+
+    refreshMonitors();
+
+    let unlisten: (() => void) | undefined;
+    listen<number>("monitors-changed", refreshMonitors)
+      .then((removeListener) => {
         if (active) {
-          setMonitors(available);
-          setSelectedScreen(0);
+          unlisten = removeListener;
+        } else {
+          removeListener();
         }
       })
       .catch((reason: unknown) => {
         if (active) {
-          setError(reason instanceof Error ? reason.message : String(reason));
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : `Unable to listen for monitor changes: ${String(reason)}`,
+          );
         }
       });
 
     return () => {
       active = false;
+      unlisten?.();
     };
   }, []);
 
   const sortedMonitors = [...monitors].sort(
     (a, b) => a.position.x - b.position.x,
   );
-  const selectedMonitor = sortedMonitors[selectedScreen];
 
   return (
     <main className="container">
-      <h1>Connected monitors</h1>
       {error && <p role="alert">Unable to load monitors: {error}</p>}
       {!error && monitors.length === 0 && <p>No monitors found.</p>}
       <div className="monitor-selector" aria-label="Connected monitors">
@@ -44,31 +68,22 @@ function App() {
             key={`${monitor.name ?? "monitor"}-${monitor.position.x}-${monitor.position.y}`}
             className={`monitor-button ${selectedScreen === index ? "selected" : ""}`}
             onClick={() => setSelectedScreen(index)}
+            aria-pressed={selectedScreen === index}
             type="button"
             style={{
               aspectRatio: `${monitor.size.width} / ${monitor.size.height}`,
               height: "auto",
             }}
           >
-            {monitor.name ?? `Monitor ${index + 1}`}
+            <span>
+              {monitor.name ?? `Monitor ${index + 1}`}
+            </span>
+            <span>
+              {monitor.size.width} × {monitor.size.height}
+            </span>
           </button>
         ))}
       </div>
-      {selectedMonitor && (
-        <div className="screen-display">
-          <p>
-            {monitors.map((m, i) => (
-              <span key={i}>
-                {m.name ?? `Monitor ${i + 1}`} ({m.size.width} × {m.size.height})
-              </span>
-            ))}
-          </p>
-          <p>Scale factor: {selectedMonitor.scaleFactor}</p>
-          <p>
-            Position: ({selectedMonitor.position.x}, {selectedMonitor.position.y})
-          </p>
-        </div>
-      )}
     </main>
   );
 }
