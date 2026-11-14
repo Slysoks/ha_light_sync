@@ -56,7 +56,7 @@ export function useMonitorData() {
 
     refreshMonitors();
     refreshScreenshots();
-    const refreshInterval = window.setInterval(refreshScreenshots, 1000);
+    const refreshInterval = window.setInterval(refreshScreenshots, 250);
 
     let unlisten: (() => void) | undefined;
     listen<number>("monitors-changed", () => {

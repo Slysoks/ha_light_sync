@@ -26,6 +26,7 @@ function createScreenOutline(
     height: size.height,
     transparent: true,
     decorations: false,
+    shadow: false,
     alwaysOnTop: true,
     focus: false,
     focusable: false,

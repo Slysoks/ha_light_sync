@@ -3,7 +3,7 @@ mod capture;
 use std::{thread, time::Duration};
 
 use serde::Serialize;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, State};
 
 #[derive(Debug, PartialEq, Serialize)]
 struct MonitorSnapshot {
@@ -50,13 +50,15 @@ fn monitor_count(window: tauri::WebviewWindow) -> Result<usize, String> {
 #[tauri::command]
 async fn capture_monitors(
     window: tauri::WebviewWindow,
+    state: State<'_, capture::CaptureState>,
 ) -> Result<Vec<capture::MonitorCapture>, String> {
-    capture::capture_monitors(&window).await
+    capture::capture_monitors(&window, state).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(capture::CaptureState::default())
         .invoke_handler(tauri::generate_handler![monitor_count, capture_monitors])
         .setup(|app| {
             let app_handle = app.handle().clone();
