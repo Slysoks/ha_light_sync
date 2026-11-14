@@ -34,6 +34,19 @@ function MonitorDashboard() {
         </div>
       </aside>
       <main className="container">
+        <img
+          src={
+            screenshots[
+              monitorKey(sortedMonitors[selectedScreen] ?? monitors[0])
+            ]
+          }
+          alt={`Screenshot of ${
+            sortedMonitors[selectedScreen]?.name ??
+            monitors[0]?.name ??
+            "monitor"
+          }`}
+          className="background-image"
+        />
         {error && <p role="alert">Unable to load monitors: {error}</p>}
         {!error && monitors.length === 0 && <p>No monitors found.</p>}
       </main>
