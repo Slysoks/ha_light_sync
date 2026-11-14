@@ -1,90 +1,51 @@
 import "./App.css";
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
-import { availableMonitors, type Monitor } from "@tauri-apps/api/window";
+import { MonitorButton } from "./components/MonitorButton";
+import { ScreenOutline } from "./components/ScreenOutline";
+import { useMonitorData } from "./hooks/useMonitorData";
+import { monitorKey } from "./types/monitor";
 
-function App() {
+function MonitorDashboard() {
+  const { monitors, screenshots, error } = useMonitorData();
   const [selectedScreen, setSelectedScreen] = useState(0);
-  const [monitors, setMonitors] = useState<Monitor[]>([]);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let active = true;
-
-    const refreshMonitors = () => {
-      availableMonitors()
-        .then((available) => {
-          if (active) {
-            setMonitors(available);
-            setSelectedScreen(0);
-            setError(null);
-          }
-        })
-        .catch((reason: unknown) => {
-          if (active) {
-            setError(reason instanceof Error ? reason.message : String(reason));
-          }
-        });
-    };
-
-    refreshMonitors();
-
-    let unlisten: (() => void) | undefined;
-    listen<number>("monitors-changed", refreshMonitors)
-      .then((removeListener) => {
-        if (active) {
-          unlisten = removeListener;
-        } else {
-          removeListener();
-        }
-      })
-      .catch((reason: unknown) => {
-        if (active) {
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : `Unable to listen for monitor changes: ${String(reason)}`,
-          );
-        }
-      });
-
-    return () => {
-      active = false;
-      unlisten?.();
-    };
-  }, []);
+    setSelectedScreen(0);
+  }, [monitors]);
 
   const sortedMonitors = [...monitors].sort(
     (a, b) => a.position.x - b.position.x,
   );
 
   return (
-    <main className="container">
-      {error && <p role="alert">Unable to load monitors: {error}</p>}
-      {!error && monitors.length === 0 && <p>No monitors found.</p>}
-      <div className="monitor-selector" aria-label="Connected monitors">
-        {sortedMonitors.map((monitor, index) => (
-          <button
-            key={`${monitor.name ?? "monitor"}-${monitor.position.x}-${monitor.position.y}`}
-            className={`monitor-button ${selectedScreen === index ? "selected" : ""}`}
-            onClick={() => setSelectedScreen(index)}
-            aria-pressed={selectedScreen === index}
-            type="button"
-            style={{
-              aspectRatio: `${monitor.size.width} / ${monitor.size.height}`,
-              height: "auto",
-            }}
-          >
-            <span>
-              {monitor.name ?? `Monitor ${index + 1}`}
-            </span>
-            <span>
-              {monitor.size.width} × {monitor.size.height}
-            </span>
-          </button>
-        ))}
-      </div>
-    </main>
+    <>
+      <aside className="monitor-sidebar" aria-label="Connected monitors">
+        <div className="monitor-selector">
+          {sortedMonitors.map((monitor, index) => (
+            <MonitorButton
+              key={`${monitor.name ?? "monitor"}-${monitorKey(monitor)}`}
+              monitor={monitor}
+              index={index}
+              selected={selectedScreen === index}
+              screenshot={screenshots[monitorKey(monitor)]}
+              onSelect={() => setSelectedScreen(index)}
+            />
+          ))}
+        </div>
+      </aside>
+      <main className="container">
+        {error && <p role="alert">Unable to load monitors: {error}</p>}
+        {!error && monitors.length === 0 && <p>No monitors found.</p>}
+      </main>
+    </>
+  );
+}
+
+function App() {
+  return window.location.hash === "#screen-outline" ? (
+    <ScreenOutline />
+  ) : (
+    <MonitorDashboard />
   );
 }
 

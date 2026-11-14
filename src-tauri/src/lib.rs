@@ -1,3 +1,5 @@
+mod capture;
+
 use std::{thread, time::Duration};
 
 use serde::Serialize;
@@ -39,13 +41,23 @@ fn monitor_snapshot(app: &tauri::AppHandle) -> Result<Vec<MonitorSnapshot>, Stri
 
 #[tauri::command]
 fn monitor_count(window: tauri::WebviewWindow) -> Result<usize, String> {
-    Ok(window.available_monitors().map_err(|e| e.to_string())?.len())
+    Ok(window
+        .available_monitors()
+        .map_err(|e| e.to_string())?
+        .len())
+}
+
+#[tauri::command]
+async fn capture_monitors(
+    window: tauri::WebviewWindow,
+) -> Result<Vec<capture::MonitorCapture>, String> {
+    capture::capture_monitors(&window).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![monitor_count])
+        .invoke_handler(tauri::generate_handler![monitor_count, capture_monitors])
         .setup(|app| {
             let app_handle = app.handle().clone();
 
@@ -70,9 +82,7 @@ pub fn run() {
                     };
 
                     if current != previous {
-                        if let Err(error) =
-                            app_handle.emit("monitors-changed", current.len())
-                        {
+                        if let Err(error) = app_handle.emit("monitors-changed", current.len()) {
                             eprintln!("Unable to notify frontend about monitor change: {error}");
                         }
                         previous = current;

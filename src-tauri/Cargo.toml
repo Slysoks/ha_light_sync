@@ -22,7 +22,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-crabgrab = "0.4.0"
+base64 = "0.22"
+crabgrab = { version = "0.4.0", features = ["screenshot"] }
+png = "0.17"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
