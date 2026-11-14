@@ -31,6 +31,17 @@ pub async fn capture_monitors(
     window: &tauri::WebviewWindow,
     state: State<'_, CaptureState>,
 ) -> Result<Vec<MonitorCapture>, String> {
+    if !window.is_visible().map_err(|error| error.to_string())?
+        || window.is_minimized().map_err(|error| error.to_string())?
+    {
+        let mut active = state
+            .active
+            .lock()
+            .map_err(|_| "Capture state is unavailable".to_string())?;
+        *active = None;
+        return Ok(Vec::new());
+    }
+
     let mut monitors = window
         .available_monitors()
         .map_err(|error| error.to_string())?;
