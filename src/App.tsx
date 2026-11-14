@@ -28,7 +28,10 @@ function App() {
     };
   }, []);
 
-  const selectedMonitor = monitors[selectedScreen];
+  const sortedMonitors = [...monitors].sort(
+    (a, b) => a.position.x - b.position.x,
+  );
+  const selectedMonitor = sortedMonitors[selectedScreen];
 
   return (
     <main className="container">
@@ -36,7 +39,7 @@ function App() {
       {error && <p role="alert">Unable to load monitors: {error}</p>}
       {!error && monitors.length === 0 && <p>No monitors found.</p>}
       <div className="monitor-selector" aria-label="Connected monitors">
-        {monitors.map((monitor, index) => (
+        {sortedMonitors.map((monitor, index) => (
           <button
             key={`${monitor.name ?? "monitor"}-${monitor.position.x}-${monitor.position.y}`}
             className={`monitor-button ${selectedScreen === index ? "selected" : ""}`}
@@ -53,9 +56,12 @@ function App() {
       </div>
       {selectedMonitor && (
         <div className="screen-display">
-          <p>Currently selected screen: {selectedMonitor.name ?? `Monitor ${selectedScreen + 1}`}</p>
           <p>
-            Resolution: {selectedMonitor.size.width} × {selectedMonitor.size.height}
+            {monitors.map((m, i) => (
+              <span key={i}>
+                {m.name ?? `Monitor ${i + 1}`} ({m.size.width} × {m.size.height})
+              </span>
+            ))}
           </p>
           <p>Scale factor: {selectedMonitor.scaleFactor}</p>
           <p>
