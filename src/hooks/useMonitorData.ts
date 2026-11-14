@@ -40,7 +40,11 @@ export function useMonitorData() {
       invoke<MonitorCapture[]>("capture_monitors")
         .then((captures) => {
           if (active) {
-            setScreenshots(capturesByPosition(captures));
+            const nextScreenshots = capturesByPosition(captures);
+            setScreenshots((currentScreenshots) => ({
+              ...currentScreenshots,
+              ...nextScreenshots,
+            }));
             setError(null);
           }
         })
@@ -56,7 +60,7 @@ export function useMonitorData() {
 
     refreshMonitors();
     refreshScreenshots();
-    const refreshInterval = window.setInterval(refreshScreenshots, 250);
+    const refreshInterval = window.setInterval(refreshScreenshots, 1000);
 
     let unlisten: (() => void) | undefined;
     listen<number>("monitors-changed", () => {

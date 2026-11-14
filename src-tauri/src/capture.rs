@@ -1,14 +1,15 @@
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 #[cfg(target_os = "windows")]
 use crabgrab::platform::windows::WindowsCaptureConfigExt;
-use crabgrab::{feature::bitmap::VideoFrameBitmap, prelude::*};
+use crabgrab::{
+    feature::{bitmap::VideoFrameBitmap, screenshot::take_screenshot},
+    prelude::*,
+};
 use png::{BitDepth, ColorType, Encoder};
 use serde::Serialize;
-use std::{
-    io::Cursor,
-    sync::{Arc, Mutex},
-};
-use tauri::State;
+use std::io::Cursor;
+
+const MAX_CAPTURE_WIDTH: f64 = 640.0;
 
 #[derive(Debug, Serialize)]
 pub struct MonitorCapture {
@@ -16,29 +17,12 @@ pub struct MonitorCapture {
     pub data_url: String,
 }
 
-#[derive(Default)]
-pub struct CaptureState {
-    active: Mutex<Option<ActiveCapture>>,
-}
-
-struct ActiveCapture {
-    monitors: Vec<(i32, i32, u32, u32)>,
-    _streams: Vec<CaptureStream>,
-    frames: Vec<Arc<Mutex<Option<String>>>>,
-}
-
 pub async fn capture_monitors(
     window: &tauri::WebviewWindow,
-    state: State<'_, CaptureState>,
 ) -> Result<Vec<MonitorCapture>, String> {
     if !window.is_visible().map_err(|error| error.to_string())?
         || window.is_minimized().map_err(|error| error.to_string())?
     {
-        let mut active = state
-            .active
-            .lock()
-            .map_err(|_| "Capture state is unavailable".to_string())?;
-        *active = None;
         return Ok(Vec::new());
     }
 
@@ -46,18 +30,6 @@ pub async fn capture_monitors(
         .available_monitors()
         .map_err(|error| error.to_string())?;
     monitors.sort_by_key(|monitor| (monitor.position().x, monitor.position().y));
-    let monitor_keys = monitors
-        .iter()
-        .map(|monitor| {
-            let position = monitor.position();
-            let size = monitor.size();
-            (position.x, position.y, size.width, size.height)
-        })
-        .collect::<Vec<_>>();
-
-    if let Some(captures) = read_cached_captures(&state, &monitor_keys) {
-        return Ok(captures);
-    }
 
     let token = {
         #[cfg(target_os = "windows")]
@@ -83,6 +55,7 @@ pub async fn capture_monitors(
             .then(left.rect().origin.y.total_cmp(&right.rect().origin.y))
     });
 
+    // Ensure that the number of monitors matches the number of displays found by CrabGrab
     if monitors.len() != displays.len() {
         return Err(format!(
             "The window API found {} monitors, but CrabGrab found {} displays",
@@ -91,80 +64,36 @@ pub async fn capture_monitors(
         ));
     }
 
-    let mut streams = Vec::with_capacity(monitors.len());
-    let mut frames = Vec::with_capacity(monitors.len());
-    for (_monitor, display) in monitors.into_iter().zip(displays) {
-        let config = CaptureConfig::with_display(display, CapturePixelFormat::Bgra8888);
+    let mut captures = Vec::with_capacity(monitors.len());
+    for (monitor, display) in monitors.into_iter().zip(displays) {
+        let capture_size = reduced_capture_size(display.rect().size);
+        let config = CaptureConfig::with_display(display, CapturePixelFormat::Bgra8888)
+            .with_output_size(capture_size);
         #[cfg(target_os = "windows")]
         let config = config.with_borderless(true);
 
-        let frame_data = Arc::new(Mutex::new(None));
-        let callback_data = Arc::clone(&frame_data);
-        let stream = CaptureStream::new(token, config, move |event| match event {
-            Ok(StreamEvent::Video(frame)) => {
-                match frame
-                    .get_bitmap()
-                    .map_err(|error| error.to_string())
-                    .and_then(encode_png)
-                {
-                    Ok(png) => match callback_data.lock() {
-                        Ok(mut data) => {
-                            *data = Some(format!("data:image/png;base64,{}", BASE64.encode(png)));
-                        }
-                        Err(_) => eprintln!("Unable to update monitor capture cache"),
-                    },
-                    Err(error) => eprintln!("Unable to encode monitor capture: {error}"),
-                }
-            }
-            Ok(_) => {}
-            Err(error) => eprintln!("Monitor capture stream failed: {error}"),
-        })
-        .map_err(|error| error.to_string())?;
+        let frame = take_screenshot(token, config)
+            .await
+            .map_err(|error| error.to_string())?;
+        let png = encode_png(frame.get_bitmap().map_err(|error| error.to_string())?)?;
+        let position = monitor.position();
 
-        streams.push(stream);
-        frames.push(frame_data);
+        captures.push(MonitorCapture {
+            position: (position.x, position.y),
+            data_url: format!("data:image/png;base64,{}", BASE64.encode(png)),
+        });
     }
-
-    let mut active = state
-        .active
-        .lock()
-        .map_err(|_| "Capture state is unavailable".to_string())?;
-    let new_active = ActiveCapture {
-        monitors: monitor_keys,
-        _streams: streams,
-        frames,
-    };
-    let captures = read_active_captures(&new_active);
-    *active = Some(new_active);
 
     Ok(captures)
 }
 
-fn read_cached_captures(
-    state: &State<'_, CaptureState>,
-    monitor_keys: &[(i32, i32, u32, u32)],
-) -> Option<Vec<MonitorCapture>> {
-    let active = state.active.lock().ok()?;
-    let active = active.as_ref()?;
-    (active.monitors == monitor_keys).then(|| read_active_captures(active))
-}
+fn reduced_capture_size(size: crabgrab::util::Size) -> crabgrab::util::Size {
+    let scale = (MAX_CAPTURE_WIDTH / size.width).min(1.0);
 
-fn read_active_captures(active: &ActiveCapture) -> Vec<MonitorCapture> {
-    active
-        .monitors
-        .iter()
-        .zip(&active.frames)
-        .filter_map(|(monitor, frame)| {
-            frame
-                .lock()
-                .ok()
-                .and_then(|data| data.clone())
-                .map(|data_url| MonitorCapture {
-                    position: (monitor.0, monitor.1),
-                    data_url,
-                })
-        })
-        .collect()
+    crabgrab::util::Size {
+        width: (size.width * scale).round().max(1.0),
+        height: (size.height * scale).round().max(1.0),
+    }
 }
 
 fn encode_png(bitmap: crabgrab::feature::bitmap::BoxedSliceFrameBitmap) -> Result<Vec<u8>, String> {
